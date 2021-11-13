@@ -7,4 +7,4 @@ To use this, simply run the executable.
 
 If you have the money to actually buy the cosmetics, I would encourage doing so to support the devs. They work hard to bring us a good game :) 
 
-The functions isRunning, ProcessIdToName, and GetModuleBase may have been copy pasted from somewhere, I've had them for a while now and can't remember if I actually wrote them or not 
+The functions isRunning and ProcessIdToName may have been copy pasted from somewhere, I've had them for a while now and can't remember if I actually wrote them or not 
