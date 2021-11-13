@@ -3,7 +3,7 @@ A program that unlocks all cosmetics for Among Us version 2021.11.9
 
 This program probably isn't optimized very well, but it runs pretty fast. It was written in C++.
 
-To use this, simply run the executable.
+To use this, download and run the newset executable from the [releases](https://github.com/HackerHansen/AmongUsCosmetics/releases/) page. 
 
 If you have the money to actually buy the cosmetics, I would encourage doing so to support the devs. They work hard to bring us a good game :) 
 
