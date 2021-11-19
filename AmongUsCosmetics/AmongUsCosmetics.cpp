@@ -131,7 +131,7 @@ DWORD signatureScan(DWORD base, string sig, DWORD scanSize) {
                 progress = 0;
             }
             if (progress >= search.size()) {
-                searchAddress = base + (a + b - (search.size() - 1)) + 0;
+                searchAddress = base + (a + b - (search.size() - 1));
                 return searchAddress;
             }
         }
