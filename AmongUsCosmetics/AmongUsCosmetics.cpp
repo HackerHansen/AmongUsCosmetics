@@ -282,7 +282,7 @@ start:
             }
             else {
                 SetConsoleTextAttribute(hConsole, 0xC);
-                cout << "Nothing works, you may have an unsupported version of the game, or a different program already injected into the game. \n";
+                cout << "Nothing works. You may have an unsupported version of the game, or a different program already injected into the game. \n";
                 SetConsoleTextAttribute(hConsole, 0x7);
                 system("pause");
                 return 0;
