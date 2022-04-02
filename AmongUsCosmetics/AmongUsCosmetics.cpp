@@ -112,22 +112,33 @@ bool attachProcess() {
 }
 
 DWORD signatureScan(DWORD base, string sig, DWORD scanSize) {
-    vector<char> search = {};
+    vector<pair<char, bool>> search = {};
     for (int i = 0; i < sig.length(); i += 2) {
         if (sig[i] == ' ') i++;
-        search.push_back(char((byteDigits[sig[i]] * 0x10) + (byteDigits[sig[i + 1]])));
+        if (sig[i] == '?') {
+            search.push_back({ 0x0, true });
+            if (sig[i + 1] != '?') { // If there is only a single question mark, decrease i 
+                i--;
+            }
+        }
+        else {
+            search.push_back({ char((byteDigits[sig[i]] * 0x10) + (byteDigits[sig[i + 1]])), false });
+        }
     }
     DWORD searchAddress = 0x0;
     int progress = 0;
+    long long cachedProgress = 0;
     for (long long a = 0x0; a < scanSize; a += 0x500) {
         size_t currScanSize = min(scanSize - a, 0x500);
         char epicScan[0x500];
         ReadProcessMemory(hprocess, (LPVOID)(base + a), &epicScan, currScanSize, 0);
         for (int b = 0; b < currScanSize; b++) {
-            if (epicScan[b] == search[progress]) {
+            if (search[progress].second == true || epicScan[b] == search[progress].first) {
+                if (progress == 0) cachedProgress = b + 1;
                 progress++;
             }
-            else {
+            else if (progress > 0) {
+                b = cachedProgress;
                 progress = 0;
             }
             if (progress >= search.size()) {
@@ -159,7 +170,7 @@ bool patchBytes(DWORD address, string bytes) {
 
 int main()
 {
-    SetConsoleTitleA("HackerHansen's Among Us Cosmetics Unlocker for v2021.12.15"); 
+    SetConsoleTitleA("HackerHansen's Among Us Cosmetics Unlocker for v2021.12.15");
     cout << "Starting! \n";
     cout << "If you can afford to actually buy cosmetics, I would encourage doing so to support the devs who work hard on this game. \n";
 start:
@@ -196,65 +207,31 @@ start:
         else if (appliedPatches == 0) {
             cout << "Scanning GameAssembly.dll for the injection points... \n";
             int workingFeatures = 0;
-            DWORD unlockPetsAddress = signatureScan(GameAssemblyNp, "2C 00 74 04 B0 01 5D", GameAssemblySize) + 0x2;
-            if (unlockPetsAddress > 0x100) {
-                SetConsoleTextAttribute(hConsole, 0xA);
-                cout << "Pets OK\n";
-                workingFeatures++;
-            }
-            else {
-                SetConsoleTextAttribute(hConsole, 0xC);
-                cout << "Pets FAIL\n";
-            }
-            DWORD unlockHatsAddress = signatureScan(GameAssemblyNp, "50 00 74 04 B0 01 5D", GameAssemblySize) + 0x2;
-            if (unlockHatsAddress > 0x100) {
-                SetConsoleTextAttribute(hConsole, 0xA);
-                cout << "Hats OK\n";
-                workingFeatures++;
-            }
-            else {
-                SetConsoleTextAttribute(hConsole, 0xC);
-                cout << "Hats FAIL\n";
-            }
-            DWORD unlockSkinsAddress = signatureScan(GameAssemblyNp, "00 00 00 00 74 04 B0 01 5D", GameAssemblySize) + 0x4;
-            if (unlockSkinsAddress > 0x100) {
-                SetConsoleTextAttribute(hConsole, 0xA);
-                cout << "Skins OK\n";
-                workingFeatures++;
-            }
-            else {
-                SetConsoleTextAttribute(hConsole, 0xC);
-                cout << "Skins FAIL\n";
-            }
-            DWORD unlockVisorsAddress = signatureScan(GameAssemblyNp, "40 00 74 04 B0 01 5D C3 56", GameAssemblySize) + 0x2;
-            if (unlockVisorsAddress > 0x100) {
-                SetConsoleTextAttribute(hConsole, 0xA);
-                cout << "Visors OK\n";
-                workingFeatures++;
-            }
-            else {
-                SetConsoleTextAttribute(hConsole, 0xC);
-                cout << "Visors FAIL\n";
-            }
-            DWORD unlockNameplatesAddress = signatureScan(GameAssemblyNp, "30 00 74 04 B0 01 5D", GameAssemblySize) + 0x2;
-            if (unlockNameplatesAddress > 0x100) {
-                SetConsoleTextAttribute(hConsole, 0xA);
-                cout << "Name Plates OK\n";
-                workingFeatures++;
-            }
-            else {
-                SetConsoleTextAttribute(hConsole, 0xC);
-                cout << "Name Plates FAIL\n";
+            int patchSuccesses = 0;
+            DWORD scanAddr = GameAssemblyNp;
+            for (int i = 1; i <= 5; i++) { // Starting at 1 for display purposes when we display it on standard output 
+                // Everything with this sig is cosmetic stuff as of v2022.3.29 
+                DWORD currScanAddr = signatureScan(scanAddr, "74 04 B0 01 5D C3 56 8B 70 ?? 57", GameAssemblySize - (scanAddr - GameAssemblyNp)); 
+                if (currScanAddr > 0x100) {
+                    scanAddr = currScanAddr;
+                    SetConsoleTextAttribute(hConsole, 0xA);
+                    cout << "Scan " << i << " OK\n";
+                    // On the line below we increment so we don't scan over the same thing (even though we probably already applied the patch successfully) 
+                    patchSuccesses += (int)patchBytes(scanAddr++, "90 90"); 
+                    workingFeatures++;
+                }
+                else {
+                    SetConsoleTextAttribute(hConsole, 0xC);
+                    cout << "Scan " << i << " FAIL\n";
+                }
             }
             if (workingFeatures > 0) {
                 if (workingFeatures == 5) {
                     SetConsoleTextAttribute(hConsole, 0xA);
                     cout << "All features OK!\n";
-                    SetConsoleTextAttribute(hConsole, 0x7);
-                    cout << "Applying patches...\n";
-                    if (!patchBytes(unlockPetsAddress, "90 90") || !patchBytes(unlockHatsAddress, "90 90") || !patchBytes(unlockSkinsAddress, "90 90") || !patchBytes(unlockVisorsAddress, "90 90") || !patchBytes(unlockNameplatesAddress, "90 90")) {
+                    if (patchSuccesses < workingFeatures) {
                         SetConsoleTextAttribute(hConsole, 0xE);
-                        cout << "WARNING: One or more patches failed, some features might not work properly!\n";
+                        cout << "WARNING: One or more patches failed!\n";
                     }
                     SetConsoleTextAttribute(hConsole, 0xA);
                     cout << "Ready to go!\n";
@@ -262,17 +239,9 @@ start:
                 else {
                     SetConsoleTextAttribute(hConsole, 0xE);
                     cout << "WARNING: Some features won't work. \n";
-                    SetConsoleTextAttribute(hConsole, 0x7);
-                    cout << "Applying patches...\n";
-                    bool patchFail = 0;
-                    if (unlockPetsAddress > 0x100) if (patchBytes(unlockPetsAddress, "90 90") == 0) patchFail = 1;
-                    if (unlockHatsAddress > 0x100) if (patchBytes(unlockHatsAddress, "90 90") == 0) patchFail = 1;
-                    if (unlockSkinsAddress > 0x100) if (patchBytes(unlockSkinsAddress, "90 90") == 0) patchFail = 1;
-                    if (unlockVisorsAddress > 0x100) if (patchBytes(unlockVisorsAddress, "90 90") == 0) patchFail = 1;
-                    if (unlockNameplatesAddress > 0x100) if (patchBytes(unlockNameplatesAddress, "90 90") == 0) patchFail = 1;
-                    if (patchFail == 1) {
+                    if (patchSuccesses < workingFeatures) {
                         SetConsoleTextAttribute(hConsole, 0xE);
-                        cout << "WARNING: One or more patches failed, some features might not work properly!\n";
+                        cout << "WARNING: One or more patches failed!\n";
                     }
                     SetConsoleTextAttribute(hConsole, 0xA);
                     cout << "Ready to go!\n";
