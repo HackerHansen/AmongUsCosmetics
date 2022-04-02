@@ -1,5 +1,5 @@
 # AmongUsCosmetics
-A program that unlocks all cosmetics for Among Us version 2021.12.15 
+A program that unlocks all cosmetics for Among Us version 2022.3.29 
 
 This program probably isn't optimized very well, but it runs pretty fast. It was written in C++.
 
