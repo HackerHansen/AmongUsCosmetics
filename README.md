@@ -1,5 +1,7 @@
 # AmongUsCosmetics
-A program that unlocks all cosmetics for Among Us version 2022.3.29 (Steam version) 
+A program that unlocks all cosmetics for Among Us (Steam version) 
+
+Last tested on version 2022.3.29 but it probably works on newer versions too 
 
 This program probably isn't optimized very well, but it runs pretty fast. It was written in C++.
 
