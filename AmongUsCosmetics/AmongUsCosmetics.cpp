@@ -210,43 +210,28 @@ start:
             int workingFeatures = 0;
             int patchSuccesses = 0;
             DWORD scanAddr = GameAssemblyNp;
-            for (int i = 1; i <= 5; i++) { // Starting at 1 for display purposes when we display it on standard output 
-                // Everything with this sig is cosmetic stuff as of v2022.3.29 
-                DWORD currScanAddr = signatureScan(scanAddr, "74 04 B0 01 5D C3 56 8B 70 ?? 57", GameAssemblySize - (scanAddr - GameAssemblyNp)); 
-                if (currScanAddr > 0x100) {
-                    scanAddr = currScanAddr;
-                    SetConsoleTextAttribute(hConsole, 0xA);
-                    cout << "Scan " << i << " OK\n";
-                    // On the line below we increment so we don't scan over the same thing (even though we probably already applied the patch successfully) 
-                    patchSuccesses += (int)patchBytes(scanAddr++, "90 90"); 
-                    workingFeatures++;
-                }
-                else {
-                    SetConsoleTextAttribute(hConsole, 0xC);
-                    cout << "Scan " << i << " FAIL\n";
-                }
+            DWORD currScanAddr = signatureScan(scanAddr, "74 04 B0 01 5D C3 56 8B 70 ?? 57", GameAssemblySize - (scanAddr - GameAssemblyNp));
+            if (currScanAddr > 0x100) {
+                scanAddr = currScanAddr;
+                SetConsoleTextAttribute(hConsole, 0xA);
+                cout << "Scan OK\n";
+                // On the line below we increment so we don't scan over the same thing (even though we probably already applied the patch successfully) 
+                patchSuccesses += (int)patchBytes(scanAddr++, "90 90");
+                workingFeatures++;
+            }
+            else {
+                SetConsoleTextAttribute(hConsole, 0xC);
+                cout << "Scan FAIL\n";
             }
             if (workingFeatures > 0) {
-                if (workingFeatures == 5) {
-                    SetConsoleTextAttribute(hConsole, 0xA);
-                    cout << "All features OK!\n";
-                    if (patchSuccesses < workingFeatures) {
-                        SetConsoleTextAttribute(hConsole, 0xE);
-                        cout << "WARNING: One or more patches failed!\n";
-                    }
-                    SetConsoleTextAttribute(hConsole, 0xA);
-                    cout << "Ready to go!\n";
-                }
-                else {
+                SetConsoleTextAttribute(hConsole, 0xA);
+                cout << "All features OK!\n";
+                if (patchSuccesses < workingFeatures) {
                     SetConsoleTextAttribute(hConsole, 0xE);
-                    cout << "WARNING: Some features won't work. \n";
-                    if (patchSuccesses < workingFeatures) {
-                        SetConsoleTextAttribute(hConsole, 0xE);
-                        cout << "WARNING: One or more patches failed!\n";
-                    }
-                    SetConsoleTextAttribute(hConsole, 0xA);
-                    cout << "Ready to go!\n";
+                    cout << "WARNING: Patch failed!\n";
                 }
+                SetConsoleTextAttribute(hConsole, 0xA);
+                cout << "Ready to go!\n";
                 patchBytes(GameAssemblyNp + 0x20, "69");
                 appliedPatches = 1;
             }
