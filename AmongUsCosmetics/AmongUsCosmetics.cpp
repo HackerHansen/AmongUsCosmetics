@@ -171,7 +171,7 @@ bool patchBytes(DWORD address, string bytes) {
 
 int main()
 {
-    SetConsoleTitleA("HackerHansen's Among Us Cosmetics Unlocker for v2022.10.25s");
+    SetConsoleTitleA("HackerHansen's Among Us Cosmetics Unlocker for v2022.10.25");
     cout << "Starting! \n";
     cout << "If you can afford to actually buy cosmetics, I would encourage doing so to support the devs who work hard on this game. \n";
 start:
