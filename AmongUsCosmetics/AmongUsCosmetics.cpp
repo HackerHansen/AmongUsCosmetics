@@ -171,7 +171,7 @@ bool patchBytes(DWORD address, string bytes) {
 
 int main()
 {
-    SetConsoleTitleA("HackerHansen's Among Us Cosmetics Unlocker for v2022.10.25");
+    SetConsoleTitleA("HackerHansen's Among Us Cosmetics Unlocker for v16.1.0s (updated 6/15/2025)");
     cout << "Starting! \n";
     cout << "If you can afford to actually buy cosmetics, I would encourage doing so to support the devs who work hard on this game. \n";
 start:
@@ -210,7 +210,10 @@ start:
             int workingFeatures = 0;
             int patchSuccesses = 0;
             DWORD scanAddr = GameAssemblyNp;
-            DWORD currScanAddr = signatureScan(scanAddr, "74 05 B0 01 5E 5D C3 ?? ?? ?? ?? ?? F6", GameAssemblySize - (scanAddr - GameAssemblyNp));
+            DWORD currScanAddr = signatureScan(scanAddr, "80 7E ?? 00 74 05 B0 01 5E 5D C3", GameAssemblySize - (scanAddr - GameAssemblyNp)) + 4;
+            // func as of v16.1.0s (6/15/2025)
+            // 55 8B EC 80 3D 25 0A 46 0D 00 75 14 68 24 F2 34 0D E8 4A 9F 94 FF 83 C4 04 C6 05 25 0A 46 0D 01 56 8B 75 0C 85 F6 74 48 80 7E 65 00 74 05 B0 01 5E 5D C3
+            //                                                                                                                         ^sig        ^patch
             if (currScanAddr > 0x100) {
                 scanAddr = currScanAddr;
                 SetConsoleTextAttribute(hConsole, 0xA);
