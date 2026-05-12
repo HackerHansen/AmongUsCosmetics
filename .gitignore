@@ -1,3 +1,17 @@
-x64/
+# Visual Studio IDE
 .vs/
-AmongUsCosmetics.vcxproj.user
+*.vcxproj.user
+
+# Build output (all configurations & platforms)
+Debug/
+Release/
+x64/
+Win32/
+
+# Intermediate build files
+*.obj
+*.ilk
+*.idb
+*.pdb
+*.recipe
+*.tlog
