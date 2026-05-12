@@ -3,36 +3,46 @@
 #include <TlHelp32.h>
 #include <string>
 #include <vector>
+#include <cstdint>
 
-static constexpr DWORD  ALREADY_PATCHED_OFFSET  = 0x20;
-static constexpr BYTE   ALREADY_PATCHED_MARKER  = 0x69;
-static constexpr DWORD  PATCH_OFFSET_FROM_MATCH = 4;
-static constexpr DWORD  PROCESS_POLL_MS         = 100;
+// ── Constants ────────────────────────────────────────────────────────────────
 
-static constexpr DWORD  NEEDED_ACCESS =
+static constexpr DWORD     ALREADY_PATCHED_OFFSET  = 0x20;
+static constexpr BYTE      ALREADY_PATCHED_MARKER  = 0x69;
+static constexpr DWORD     PATCH_OFFSET_FROM_MATCH = 4;
+static constexpr DWORD     PROCESS_POLL_MS         = 100;
+static constexpr DWORD     SCAN_CHUNK_SIZE         = 4 * 1024 * 1024; // 4 MB per chunk
+
+static constexpr DWORD     NEEDED_ACCESS =
     PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION |
     PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE;
 
 static constexpr const char* COSMETICS_SIG   = "80 7E ?? 00 74 05 B0 01 5E 5D C3";
 static constexpr const char* COSMETICS_PATCH = "90 90";
 
+// ── Types ────────────────────────────────────────────────────────────────────
+
 struct SigByte {
     BYTE value;
     bool isWild;
 };
 
+// baseAddress is pointer-sized so it survives an x64 build without truncation.
+// moduleSize stays DWORD — a single module can't exceed 4 GB.
 struct ModuleInfo {
-    DWORD baseAddress = 0;
-    DWORD moduleSize  = 0;
+    uintptr_t baseAddress = 0;
+    DWORD     moduleSize  = 0;
 };
 
 struct ProcessContext {
-    DWORD  pid      = 0;
-    HANDLE hProcess = nullptr;
-    DWORD  gaBase   = 0;
-    DWORD  gaSize   = 0;
-    HANDLE hConsole = nullptr;
+    DWORD     pid      = 0;
+    HANDLE    hProcess = nullptr;
+    uintptr_t gaBase   = 0;   // pointer-sized: safe on both x86 and x64
+    DWORD     gaSize   = 0;
+    HANDLE    hConsole = nullptr;
 };
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 static BYTE HexCharToByte(char hi, char lo)
 {
@@ -63,34 +73,48 @@ static std::vector<SigByte> ParseSignature(const char* sig)
     return pattern;
 }
 
-static DWORD SignatureScan(HANDLE hProcess, DWORD base, DWORD size,
-                           const std::vector<SigByte>& pattern)
+// Scans in SCAN_CHUNK_SIZE chunks with (patLen-1) byte overlap at each boundary
+// so patterns that straddle a chunk edge are never missed.
+// Memory usage is capped at SCAN_CHUNK_SIZE + patLen instead of the whole module.
+static uintptr_t SignatureScan(HANDLE hProcess, uintptr_t base, DWORD totalSize,
+                               const std::vector<SigByte>& pattern)
 {
-    if (pattern.empty() || size == 0) return 0;
+    if (pattern.empty() || totalSize == 0) return 0;
 
-    std::vector<BYTE> buf(size);
-    SIZE_T bytesRead = 0;
-    if (!ReadProcessMemory(hProcess, (LPCVOID)(ULONG_PTR)base,
-                           buf.data(), size, &bytesRead) || bytesRead == 0) {
-        std::cerr << "ReadProcessMemory failed: " << GetLastError() << '\n';
-        return 0;
-    }
+    const DWORD patLen  = static_cast<DWORD>(pattern.size());
+    const DWORD overlap = patLen - 1; // bytes re-read from previous chunk
 
-    const size_t patLen = pattern.size();
-    for (size_t i = 0; i + patLen <= bytesRead; ++i) {
-        bool matched = true;
-        for (size_t j = 0; j < patLen; ++j) {
-            if (!pattern[j].isWild && buf[i + j] != pattern[j].value) {
-                matched = false;
-                break;
+    std::vector<BYTE> buf;
+
+    for (DWORD offset = 0; offset < totalSize; offset += SCAN_CHUNK_SIZE) {
+        const DWORD remaining = totalSize - offset;
+        const DWORD readSize  = min(SCAN_CHUNK_SIZE + overlap, remaining);
+        buf.resize(readSize);
+
+        SIZE_T bytesRead = 0;
+        if (!ReadProcessMemory(hProcess, (LPCVOID)(base + offset),
+                               buf.data(), readSize, &bytesRead)
+            || bytesRead < patLen)
+            continue;
+
+        for (size_t i = 0; i + patLen <= bytesRead; ++i) {
+            bool matched = true;
+            for (size_t j = 0; j < patLen; ++j) {
+                if (!pattern[j].isWild && buf[i + j] != pattern[j].value) {
+                    matched = false;
+                    break;
+                }
             }
+            if (matched) return base + offset + static_cast<DWORD>(i);
         }
-        if (matched) return base + static_cast<DWORD>(i);
     }
     return 0;
 }
 
-static bool PatchBytes(HANDLE hProcess, DWORD address, const char* bytes)
+// Writes bytes into the remote process.
+// Checks VirtualProtectEx return values and flushes the instruction cache after
+// a successful write so the CPU doesn't execute stale cached instructions.
+static bool PatchBytes(HANDLE hProcess, uintptr_t address, const char* bytes)
 {
     std::vector<BYTE> patch;
     for (const char* p = bytes; *p; ) {
@@ -102,14 +126,21 @@ static bool PatchBytes(HANDLE hProcess, DWORD address, const char* bytes)
     if (patch.empty()) return false;
 
     DWORD oldProtect = 0, dummy = 0;
-    VirtualProtectEx(hProcess, (LPVOID)(ULONG_PTR)address,
-                     patch.size(), PAGE_EXECUTE_READWRITE, &oldProtect);
+    if (!VirtualProtectEx(hProcess, (LPVOID)address,
+                          patch.size(), PAGE_EXECUTE_READWRITE, &oldProtect)) {
+        std::cerr << "VirtualProtectEx (RWX) failed: " << GetLastError() << '\n';
+        return false;
+    }
 
-    bool ok = WriteProcessMemory(hProcess, (LPVOID)(ULONG_PTR)address,
-                                 patch.data(), patch.size(), nullptr) != 0;
+    const bool ok = WriteProcessMemory(hProcess, (LPVOID)address,
+                                       patch.data(), patch.size(), nullptr) != 0;
 
-    VirtualProtectEx(hProcess, (LPVOID)(ULONG_PTR)address,
-                     patch.size(), oldProtect, &dummy);
+    if (ok)
+        FlushInstructionCache(hProcess, (LPVOID)address, patch.size());
+
+    if (!VirtualProtectEx(hProcess, (LPVOID)address, patch.size(), oldProtect, &dummy))
+        std::cerr << "VirtualProtectEx (restore) failed: " << GetLastError() << '\n';
+
     return ok;
 }
 
@@ -125,7 +156,8 @@ static ModuleInfo GetModuleInfo(const wchar_t* moduleName, DWORD procID)
         do {
             if (wcscmp(entry.szModule, moduleName) == 0) {
                 CloseHandle(snap);
-                return { (DWORD)(ULONG_PTR)entry.modBaseAddr, entry.modBaseSize };
+                // Cast through uintptr_t: safe on both x86 (32-bit ptr) and x64 (64-bit ptr)
+                return { (uintptr_t)entry.modBaseAddr, entry.modBaseSize };
             }
         } while (Module32NextW(snap, &entry));
     }
@@ -147,7 +179,7 @@ static std::string ProcessIdToName(DWORD procID)
             std::cerr << "QueryFullProcessImageNameA failed: " << GetLastError() << '\n';
         CloseHandle(handle);
     } else {
-        std::cerr << "OpenProcess failed: " << GetLastError() << '\n';
+        std::cerr << "OpenProcess (name query) failed: " << GetLastError() << '\n';
     }
     return ret;
 }
@@ -167,9 +199,20 @@ static bool AttachProcess(ProcessContext& ctx)
     }
 
     std::string name = ProcessIdToName(pid);
-    std::string exe  = name.substr(name.find_last_of('\\') + 1);
+    if (name.empty()) {
+        std::cerr << "Could not retrieve process name for PID " << pid << '\n';
+        CloseHandle(h);
+        return false;
+    }
+
+    // Guard against paths with no backslash (e.g. bare filenames)
+    const size_t slashPos = name.find_last_of('\\');
+    const std::string exe = (slashPos == std::string::npos)
+                                ? name
+                                : name.substr(slashPos + 1);
+
     if (exe != "Among Us.exe") {
-        std::cerr << "Wrong process attached: " << exe << '\n';
+        std::cerr << "Wrong process: expected \"Among Us.exe\", got \"" << exe << "\"\n";
         CloseHandle(h);
         return false;
     }
@@ -189,8 +232,8 @@ static void ApplyPatches(ProcessContext& ctx)
 {
     std::cout << "Scanning GameAssembly.dll for injection point...\n";
 
-    std::vector<SigByte> pattern = ParseSignature(COSMETICS_SIG);
-    DWORD matchAddr = SignatureScan(ctx.hProcess, ctx.gaBase, ctx.gaSize, pattern);
+    const std::vector<SigByte> pattern = ParseSignature(COSMETICS_SIG);
+    const uintptr_t matchAddr = SignatureScan(ctx.hProcess, ctx.gaBase, ctx.gaSize, pattern);
 
     if (matchAddr == 0) {
         SetConsoleTextAttribute(ctx.hConsole, 0xC);
@@ -203,12 +246,15 @@ static void ApplyPatches(ProcessContext& ctx)
     SetConsoleTextAttribute(ctx.hConsole, 0xA);
     std::cout << "Scan OK at 0x" << std::hex << matchAddr << std::dec << '\n';
 
-    DWORD patchAddr = matchAddr + PATCH_OFFSET_FROM_MATCH;
+    const uintptr_t patchAddr = matchAddr + PATCH_OFFSET_FROM_MATCH;
     if (!PatchBytes(ctx.hProcess, patchAddr, COSMETICS_PATCH)) {
-        SetConsoleTextAttribute(ctx.hConsole, 0xE);
-        std::cout << "WARNING: Patch write failed!\n";
+        SetConsoleTextAttribute(ctx.hConsole, 0xC);
+        std::cout << "Patch write failed — aborting.\n";
+        SetConsoleTextAttribute(ctx.hConsole, 0x7);
+        return; // do NOT write the marker; next run should retry patching
     }
 
+    // Only mark as patched after all writes succeed
     PatchBytes(ctx.hProcess, ctx.gaBase + ALREADY_PATCHED_OFFSET, "69");
 
     SetConsoleTextAttribute(ctx.hConsole, 0xA);
@@ -240,7 +286,7 @@ static void RunOnce(ProcessContext& ctx)
 
     BYTE marker = 0;
     ReadProcessMemory(ctx.hProcess,
-                      (LPCVOID)(ULONG_PTR)(ctx.gaBase + ALREADY_PATCHED_OFFSET),
+                      (LPCVOID)(ctx.gaBase + ALREADY_PATCHED_OFFSET),
                       &marker, 1, nullptr);
     if (marker == ALREADY_PATCHED_MARKER) {
         SetConsoleTextAttribute(ctx.hConsole, 0xA);
@@ -266,7 +312,7 @@ int main()
     while (true) {
         RunOnce(ctx);
         if (ctx.hProcess) { CloseHandle(ctx.hProcess); ctx.hProcess = nullptr; }
-        HANDLE hCon = ctx.hConsole;
+        const HANDLE hCon = ctx.hConsole;
         ctx = {};
         ctx.hConsole = hCon;
     }
