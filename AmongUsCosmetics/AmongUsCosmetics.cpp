@@ -19,6 +19,9 @@ static constexpr DWORD     NEEDED_ACCESS =
 
 static constexpr const char* COSMETICS_SIG   = "80 7E ?? 00 74 05 B0 01 5E 5D C3";
 static constexpr const char* COSMETICS_PATCH = "90 90";
+// func as of v16.1.0s (6/15/2025)
+// 55 8B EC 80 3D 25 0A 46 0D 00 75 14 68 24 F2 34 0D E8 4A 9F 94 FF 83 C4 04 C6 05 25 0A 46 0D 01 56 8B 75 0C 85 F6 74 48 80 7E 65 00 74 05 B0 01 5E 5D C3
+//                                                                                                                         ^sig        ^patch
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
