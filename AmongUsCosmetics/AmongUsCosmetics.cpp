@@ -236,7 +236,7 @@ static void ApplyPatches(ProcessContext& ctx)
 
     if (matchAddr == 0) {
         SetConsoleTextAttribute(ctx.hConsole, 0xC);
-        std::cout << "Scan FAIL — unsupported game version or signature not found.\n";
+        std::cout << "Scan FAIL - unsupported game version or signature not found.\n";
         SetConsoleTextAttribute(ctx.hConsole, 0x7);
         system("pause");
         return;
@@ -248,7 +248,7 @@ static void ApplyPatches(ProcessContext& ctx)
     const DWORD patchAddr = matchAddr + PATCH_OFFSET_FROM_MATCH;
     if (!PatchBytes(ctx.hProcess, patchAddr, COSMETICS_PATCH)) {
         SetConsoleTextAttribute(ctx.hConsole, 0xC);
-        std::cout << "Patch write failed — aborting.\n";
+        std::cout << "Patch write failed - aborting.\n";
         SetConsoleTextAttribute(ctx.hConsole, 0x7);
         return; // do NOT write the marker; next run should retry patching
     }
@@ -257,7 +257,7 @@ static void ApplyPatches(ProcessContext& ctx)
     PatchBytes(ctx.hProcess, ctx.gaBase + ALREADY_PATCHED_OFFSET, "69");
 
     SetConsoleTextAttribute(ctx.hConsole, 0xA);
-    std::cout << "All patches applied — ready to go!\n";
+    std::cout << "All patches applied - ready to go!\n";
     SetConsoleTextAttribute(ctx.hConsole, 0x7);
 }
 
@@ -289,14 +289,14 @@ static void RunOnce(ProcessContext& ctx)
                       &marker, 1, nullptr);
     if (marker == ALREADY_PATCHED_MARKER) {
         SetConsoleTextAttribute(ctx.hConsole, 0xA);
-        std::cout << "This process was already patched — ready to go!\n";
+        std::cout << "This process was already patched - ready to go!\n";
         SetConsoleTextAttribute(ctx.hConsole, 0x7);
     } else {
         ApplyPatches(ctx);
     }
 
     WaitForSingleObject(ctx.hProcess, INFINITE);
-    std::cout << "Game closed — waiting for next launch...\n";
+    std::cout << "Game closed - waiting for next launch...\n";
 }
 
 int main()
