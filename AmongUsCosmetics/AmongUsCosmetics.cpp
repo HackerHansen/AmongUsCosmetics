@@ -3,17 +3,16 @@
 #include <TlHelp32.h>
 #include <string>
 #include <vector>
-#include <cstdint>
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-static constexpr DWORD     ALREADY_PATCHED_OFFSET  = 0x20;
-static constexpr BYTE      ALREADY_PATCHED_MARKER  = 0x69;
-static constexpr DWORD     PATCH_OFFSET_FROM_MATCH = 4;
-static constexpr DWORD     PROCESS_POLL_MS         = 100;
-static constexpr DWORD     SCAN_CHUNK_SIZE         = 4 * 1024 * 1024; // 4 MB per chunk
+static constexpr DWORD ALREADY_PATCHED_OFFSET  = 0x20;
+static constexpr BYTE  ALREADY_PATCHED_MARKER  = 0x69;
+static constexpr DWORD PATCH_OFFSET_FROM_MATCH = 4;
+static constexpr DWORD PROCESS_POLL_MS         = 100;
+static constexpr DWORD SCAN_CHUNK_SIZE         = 4 * 1024 * 1024; // 4 MB per chunk
 
-static constexpr DWORD     NEEDED_ACCESS =
+static constexpr DWORD NEEDED_ACCESS =
     PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION |
     PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE;
 
@@ -30,19 +29,17 @@ struct SigByte {
     bool isWild;
 };
 
-// baseAddress is pointer-sized so it survives an x64 build without truncation.
-// moduleSize stays DWORD — a single module can't exceed 4 GB.
 struct ModuleInfo {
-    uintptr_t baseAddress = 0;
-    DWORD     moduleSize  = 0;
+    DWORD baseAddress = 0;
+    DWORD moduleSize  = 0;
 };
 
 struct ProcessContext {
-    DWORD     pid      = 0;
-    HANDLE    hProcess = nullptr;
-    uintptr_t gaBase   = 0;   // pointer-sized: safe on both x86 and x64
-    DWORD     gaSize   = 0;
-    HANDLE    hConsole = nullptr;
+    DWORD  pid      = 0;
+    HANDLE hProcess = nullptr;
+    DWORD  gaBase   = 0;
+    DWORD  gaSize   = 0;
+    HANDLE hConsole = nullptr;
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -79,13 +76,13 @@ static std::vector<SigByte> ParseSignature(const char* sig)
 // Scans in SCAN_CHUNK_SIZE chunks with (patLen-1) byte overlap at each boundary
 // so patterns that straddle a chunk edge are never missed.
 // Memory usage is capped at SCAN_CHUNK_SIZE + patLen instead of the whole module.
-static uintptr_t SignatureScan(HANDLE hProcess, uintptr_t base, DWORD totalSize,
-                               const std::vector<SigByte>& pattern)
+static DWORD SignatureScan(HANDLE hProcess, DWORD base, DWORD totalSize,
+                           const std::vector<SigByte>& pattern)
 {
     if (pattern.empty() || totalSize == 0) return 0;
 
     const DWORD patLen  = static_cast<DWORD>(pattern.size());
-    const DWORD overlap = patLen - 1; // bytes re-read from previous chunk
+    const DWORD overlap = patLen - 1;
 
     std::vector<BYTE> buf;
 
@@ -117,7 +114,7 @@ static uintptr_t SignatureScan(HANDLE hProcess, uintptr_t base, DWORD totalSize,
 // Writes bytes into the remote process.
 // Checks VirtualProtectEx return values and flushes the instruction cache after
 // a successful write so the CPU doesn't execute stale cached instructions.
-static bool PatchBytes(HANDLE hProcess, uintptr_t address, const char* bytes)
+static bool PatchBytes(HANDLE hProcess, DWORD address, const char* bytes)
 {
     std::vector<BYTE> patch;
     for (const char* p = bytes; *p; ) {
@@ -159,8 +156,7 @@ static ModuleInfo GetModuleInfo(const wchar_t* moduleName, DWORD procID)
         do {
             if (wcscmp(entry.szModule, moduleName) == 0) {
                 CloseHandle(snap);
-                // Cast through uintptr_t: safe on both x86 (32-bit ptr) and x64 (64-bit ptr)
-                return { (uintptr_t)entry.modBaseAddr, entry.modBaseSize };
+                return { (DWORD)entry.modBaseAddr, entry.modBaseSize };
             }
         } while (Module32NextW(snap, &entry));
     }
@@ -236,7 +232,7 @@ static void ApplyPatches(ProcessContext& ctx)
     std::cout << "Scanning GameAssembly.dll for injection point...\n";
 
     const std::vector<SigByte> pattern = ParseSignature(COSMETICS_SIG);
-    const uintptr_t matchAddr = SignatureScan(ctx.hProcess, ctx.gaBase, ctx.gaSize, pattern);
+    const DWORD matchAddr = SignatureScan(ctx.hProcess, ctx.gaBase, ctx.gaSize, pattern);
 
     if (matchAddr == 0) {
         SetConsoleTextAttribute(ctx.hConsole, 0xC);
@@ -249,7 +245,7 @@ static void ApplyPatches(ProcessContext& ctx)
     SetConsoleTextAttribute(ctx.hConsole, 0xA);
     std::cout << "Scan OK at 0x" << std::hex << matchAddr << std::dec << '\n';
 
-    const uintptr_t patchAddr = matchAddr + PATCH_OFFSET_FROM_MATCH;
+    const DWORD patchAddr = matchAddr + PATCH_OFFSET_FROM_MATCH;
     if (!PatchBytes(ctx.hProcess, patchAddr, COSMETICS_PATCH)) {
         SetConsoleTextAttribute(ctx.hConsole, 0xC);
         std::cout << "Patch write failed — aborting.\n";
