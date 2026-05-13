@@ -13,5 +13,6 @@ Win32/
 *.ilk
 *.idb
 *.pdb
+*.exe
 *.recipe
 *.tlog
